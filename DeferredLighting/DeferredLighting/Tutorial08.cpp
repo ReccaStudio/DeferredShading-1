@@ -152,16 +152,16 @@ bool InitializeQuadBuffers(ID3D11Device* device, int windowWidth, int windowHeig
 
 
 	// Calculate the screen coordinates of the left side of the window.
-	left = (float)((windowWidth / 2) * -1);
+	left = -1;
 
 	// Calculate the screen coordinates of the right side of the window.
-	right = left + (float)windowWidth;
+	right = 1;
 
 	// Calculate the screen coordinates of the top of the window.
-	top = (float)(windowHeight / 2);
+	top = 1;
 
 	// Calculate the screen coordinates of the bottom of the window.
-	bottom = top - (float)windowHeight;
+	bottom = -1;
 
 	// Set the number of vertices in the vertex array.
 	m_vertexCount = 6;
@@ -260,7 +260,7 @@ bool InitializeQuadBuffers(ID3D11Device* device, int windowWidth, int windowHeig
 	return true;
 }
 
-void RenderBuffers(ID3D11DeviceContext* deviceContext, ID3D11Buffer* m_vertexBuffer,ID3D11Buffer* m_indexBuffer)
+void RenderBuffers(ID3D11DeviceContext* deviceContext, ID3D11Buffer** m_vertexBuffer,ID3D11Buffer* m_indexBuffer)
 {
 	unsigned int stride;
 	unsigned int offset;
@@ -270,7 +270,7 @@ void RenderBuffers(ID3D11DeviceContext* deviceContext, ID3D11Buffer* m_vertexBuf
 	stride = sizeof(SimpleVertex);
 	offset = 0;
 	// Set the vertex buffer to active in the input assembler so it can be rendered.
-	deviceContext->IASetVertexBuffers(0, 1, &m_vertexBuffer, &stride, &offset);
+	deviceContext->IASetVertexBuffers(0, 1, m_vertexBuffer, &stride, &offset);
 
 	// Set the index buffer to active in the input assembler so it can be rendered.
 	deviceContext->IASetIndexBuffer(m_indexBuffer, DXGI_FORMAT_R32_UINT, 0);
@@ -388,19 +388,19 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
     bd.ByteWidth = sizeof(CBChangesEveryFrame);
     V_RETURN( pd3dDevice->CreateBuffer( &bd, nullptr, &g_pCBChangesEveryFrame ) );
 
-	RenderBuffers(pd3dImmediateContext, g_pVertexBuffer, g_pIndexBuffer);
+	RenderBuffers(pd3dImmediateContext, &g_pVertexBuffer, g_pIndexBuffer);
 
     // Initialize the world matrices
 	g_World = XMMatrixIdentity();
-
+	
 	// Initialize the view matrix
-	static const XMVECTORF32 s_Eye = { 0.0f, 3.0f, -6.0f, 0.f };
-	static const XMVECTORF32 s_At = { 0.0f, 1.0f, 0.0f, 0.f };
-	static const XMVECTORF32 s_Up = { 0.0f, 1.0f, 0.0f, 0.f };
+	XMVECTORF32 s_Eye = { 0.0f, 3.0f, -6.0f, 0.f };
+	XMVECTORF32 s_At = { 0.0f, 1.0f, 0.0f, 0.f };
+	XMVECTORF32 s_Up = { 0.0f, 1.0f, 0.0f, 0.f };
 	g_View = XMMatrixLookAtLH(s_Eye, s_At, s_Up);
 
 	// Load the Texture
-	V_RETURN(DXUTCreateShaderResourceViewFromFile(pd3dDevice, L"misc\\seafloor.dds", &g_pTextureRV));
+	V_RETURN(DXUTCreateShaderResourceViewFromFile(pd3dDevice, L"seafloor.dds", &g_pTextureRV));
 
 	// Create the sample state
 	D3D11_SAMPLER_DESC sampDesc;
@@ -416,6 +416,7 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
 
 
 	InitializeQuadBuffers(pd3dDevice, screen_width, screen_height);
+	s_Eye = { 0.0f, 0.0f, -1.0f, 0.f };
 
 	D3D11_TEXTURE2D_DESC textureDesc;
 	D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
@@ -638,7 +639,12 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
 	// Compile the pixel shader
 	ID3DBlob* pPSLightBlob = nullptr;
 	V_RETURN(DXUTCompileFromFile(L"Light.hlsl", nullptr, "PS", "ps_4_0", dwShaderFlags, 0, &pPSLightBlob));
-
+	hr = pd3dDevice->CreatePixelShader(pPSLightBlob->GetBufferPointer(), pPSLightBlob->GetBufferSize(), nullptr, &g_pLightPixelShader);
+	if (FAILED(hr))
+	{
+		SAFE_RELEASE(pLightVSBlob);
+		return hr;
+	}
 
 	ZeroMemory(&sampDesc, sizeof(sampDesc));
 	sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
@@ -662,6 +668,8 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
 	lightbd.ByteWidth = sizeof(LightBufferType);
 	lightbd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
 	lightbd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	lightbd.MiscFlags = 0;
+	lightbd.StructureByteStride = 0;
 	//D3D11_SUBRESOURCE_DATA InitData;
 	//ZeroMemory(&InitData, sizeof(InitData));
 	//InitData.pSysMem = vertices;
@@ -727,7 +735,6 @@ HRESULT CALLBACK OnD3D11ResizedSwapChain( ID3D11Device* pd3dDevice, IDXGISwapCha
     // Setup the projection parameters
     float fAspect = static_cast<float>( pBackBufferSurfaceDesc->Width ) / static_cast<float>( pBackBufferSurfaceDesc->Height );
     g_Projection = XMMatrixPerspectiveFovLH( XM_PI * 0.25f, fAspect, 0.1f, 100.0f );
-
     return S_OK;
 }
 
@@ -753,21 +760,18 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
 void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext* pd3dImmediateContext,
                                   double fTime, float fElapsedTime, void* pUserContext )
 {
-	//g_renderTargetView = DXUTGetD3D11RenderTargetView();
-	//SetRenderTargets(pd3dImmediateContext);
-	//ClearRenderTargets(pd3dImmediateContext);
+	g_renderTargetView = DXUTGetD3D11RenderTargetView();
+	SetRenderTargets(pd3dImmediateContext);
+	ClearRenderTargets(pd3dImmediateContext);
 
-	//RenderBuffers(pd3dImmediateContext,g_pVertexBuffer,g_pIndexBuffer);
+	//render model
+	RenderBuffers(pd3dImmediateContext,&g_pVertexBuffer,g_pIndexBuffer);
 
-	// Update constant buffer that changes once per frame
-	auto pRTV = DXUTGetD3D11RenderTargetView();
-	pd3dImmediateContext->ClearRenderTargetView(pRTV, Colors::MidnightBlue);
+	//auto pRTV = DXUTGetD3D11RenderTargetView();
+	//pd3dImmediateContext->ClearRenderTargetView(pRTV, Colors::MidnightBlue);
+	//auto pDSV = DXUTGetD3D11DepthStencilView();
+	//pd3dImmediateContext->ClearDepthStencilView(pDSV, D3D11_CLEAR_DEPTH, 1.0, 0);
 
-	//
-	// Clear the depth stencil
-	//
-	auto pDSV = DXUTGetD3D11DepthStencilView();
-	pd3dImmediateContext->ClearDepthStencilView(pDSV, D3D11_CLEAR_DEPTH, 1.0, 0);
 	HRESULT hr;
 	D3D11_MAPPED_SUBRESOURCE MappedResource;
 	V(pd3dImmediateContext->Map(g_pCBChangesEveryFrame, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
@@ -778,7 +782,7 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
 	pd3dImmediateContext->Unmap(g_pCBChangesEveryFrame, 0);
 
 	pd3dImmediateContext->VSSetConstantBuffers(0, 1, &g_pCBChangesEveryFrame);
-	pd3dImmediateContext->PSSetConstantBuffers(0, 1, &g_pCBChangesEveryFrame);
+//	pd3dImmediateContext->PSSetConstantBuffers(0, 1, &g_pCBChangesEveryFrame);
 	pd3dImmediateContext->PSSetShaderResources(0, 1, &g_pTextureRV);
 
 	pd3dImmediateContext->IASetInputLayout(g_pVertexLayout);
@@ -788,48 +792,56 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
 	pd3dImmediateContext->PSSetSamplers(0, 1, &g_pSamplerLinear);
 	pd3dImmediateContext->DrawIndexed(36, 0, 0);
 
-	//SetBackBufferRenderTarget(pd3dImmediateContext);
-	//ResetViewport(pd3dImmediateContext);
+	SetBackBufferRenderTarget(pd3dImmediateContext);
+	ResetViewport(pd3dImmediateContext);
 
-	//pd3dImmediateContext->ClearRenderTargetView(g_renderTargetView, Colors::MidnightBlue);
-	//pd3dImmediateContext->ClearDepthStencilView(g_depthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
-	////
-	//// Render Full Screen Quad
-	////
-	//TurnZBufferOff(pd3dImmediateContext);
-
-	//RenderBuffers(pd3dImmediateContext,g_pQuadVertexBuffer,g_pQuadIndexBuffer);
-	////
-	//// Light
-	////
-	//V(pd3dImmediateContext->Map(g_pCBChangesEveryFrame, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
-	//pCB = reinterpret_cast<CBChangesEveryFrame*>(MappedResource.pData);
-	//XMStoreFloat4x4(&pCB->mWorld, XMMatrixTranspose(g_World));
-	//XMStoreFloat4x4(&pCB->mView, XMMatrixTranspose(g_View));
-	//XMStoreFloat4x4(&pCB->mProj, XMMatrixTranspose(g_Projection));
-	//pd3dImmediateContext->Unmap(g_pCBChangesEveryFrame, 0);
+	pd3dImmediateContext->ClearRenderTargetView(g_renderTargetView, Colors::MidnightBlue);
+	pd3dImmediateContext->ClearDepthStencilView(g_depthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
 	//
-	//pd3dImmediateContext->VSSetShader(g_pLightVertexShader, nullptr, 0);
-	//pd3dImmediateContext->VSSetConstantBuffers(0, 1, &g_pCBChangesEveryFrame);
+	// Render Full Screen Quad
+	//
+	TurnZBufferOff(pd3dImmediateContext);
 
-	//V(pd3dImmediateContext->Map(g_pLightPixelBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
-	//auto pData = reinterpret_cast<LightBufferType*>(MappedResource.pData);
-	//pData->lightDirection= XMFLOAT3(0.0f, 0.0f, 1.0f);
-	//pData->padding = 0.0f;
-	//pd3dImmediateContext->Unmap(g_pLightPixelBuffer, 0);
+	RenderBuffers(pd3dImmediateContext,&g_pQuadVertexBuffer,g_pQuadIndexBuffer);
+	//
+	// Light
+	//
 
-	//pd3dImmediateContext->PSSetConstantBuffers(1, 1, &g_pLightPixelBuffer);
-	//pd3dImmediateContext->PSSetShaderResources(0, 1, &g_shaderResourceViewArray[0]);//color
-	//pd3dImmediateContext->PSSetShaderResources(1, 1, &g_shaderResourceViewArray[1]);//normal
 
-	//pd3dImmediateContext->IASetInputLayout(g_pLightVertexLayout);
-	//pd3dImmediateContext->VSSetShader(g_pLightVertexShader, nullptr, 0);
-	//pd3dImmediateContext->PSSetShader(g_pLightPixelShader, nullptr, 0);
-	//pd3dImmediateContext->PSSetSamplers(0, 1, &g_pSamplerLight);
-	//pd3dImmediateContext->DrawIndexed(6, 0, 0);
+	V(pd3dImmediateContext->Map(g_pCBChangesEveryFrame, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
+	pCB = reinterpret_cast<CBChangesEveryFrame*>(MappedResource.pData);
+	XMStoreFloat4x4(&pCB->mWorld, XMMatrixTranspose(g_World));
+	XMStoreFloat4x4(&pCB->mView, XMMatrixTranspose(g_View));
+	XMStoreFloat4x4(&pCB->mProj, XMMatrixTranspose(g_Projection));
+	pd3dImmediateContext->Unmap(g_pCBChangesEveryFrame, 0);
+	
+	pd3dImmediateContext->VSSetShader(g_pLightVertexShader, nullptr, 0);
+	pd3dImmediateContext->VSSetConstantBuffers(0, 1, &g_pCBChangesEveryFrame);
 
-	//TurnZBufferOn(pd3dImmediateContext);
+	V(pd3dImmediateContext->Map(g_pLightPixelBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
+	auto pData = reinterpret_cast<LightBufferType*>(MappedResource.pData);
+	pData->lightDirection= XMFLOAT3(0.0f, 0.0f, 1.0f);
+	pData->padding = 0.0f;
+	pd3dImmediateContext->Unmap(g_pLightPixelBuffer, 1);
 
+	pd3dImmediateContext->PSSetConstantBuffers(1, 1, &g_pLightPixelBuffer);
+	pd3dImmediateContext->PSSetShaderResources(0, 1, &g_shaderResourceViewArray[0]);//color
+	pd3dImmediateContext->PSSetShaderResources(1, 1, &g_shaderResourceViewArray[1]);//normal
+
+	pd3dImmediateContext->IASetInputLayout(g_pLightVertexLayout);
+	pd3dImmediateContext->VSSetShader(g_pLightVertexShader, nullptr, 0);
+	pd3dImmediateContext->PSSetShader(g_pLightPixelShader, nullptr, 0);
+	pd3dImmediateContext->PSSetSamplers(0, 1, &g_pSamplerLight);
+	pd3dImmediateContext->DrawIndexed(6, 0, 0);
+
+	TurnZBufferOn(pd3dImmediateContext);
+
+	//if (DXUTIsVsyncEnabled())
+	//{
+	//	DXUTGetDXGISwapChain()->Present(1, 0);
+	//}
+	//else
+	//	DXUTGetDXGISwapChain()->Present(0, 0);
 	//SetBackBufferRenderTarget(pd3dImmediateContext);
 	//ResetViewport(pd3dImmediateContext);
 
@@ -868,8 +880,6 @@ void CALLBACK OnD3D11DestroyDevice( void* pUserContext )
 	SAFE_RELEASE(g_pSamplerLinear);
 	SAFE_RELEASE(g_pSamplerLight);
 	SAFE_RELEASE(g_renderTargetView);
-	SAFE_RELEASE(g_depthStencilBuffer);
-	SAFE_RELEASE(g_depthStencilView);
 	SAFE_RELEASE(g_depthStencilState);
 	SAFE_RELEASE(g_depthDisabledStencilState);
 	SAFE_RELEASE(g_rasterState);

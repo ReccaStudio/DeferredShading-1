@@ -43,10 +43,7 @@ struct PS_INPUT
 PS_INPUT VS(VS_INPUT input)
 {
     PS_INPUT output = (PS_INPUT) 0;
-    input.Pos.w = 1.0f;
-    output.Pos = mul(input.Pos, World);
-    output.Pos = mul(output.Pos, View);
-    output.Pos = mul(output.Pos, Proj);
+    output.Pos = input.Pos;
     output.Tex = input.Tex;
     return output;
 }
@@ -69,6 +66,6 @@ float4 PS(PS_INPUT input) : SV_Target
     lightDir = -LightDirection;
     diff = saturate(dot(normals.xyz, lightDir));
     
-    outputColor = saturate(colors * diff);
+    outputColor = saturate(colors);
     return outputColor;
 }
