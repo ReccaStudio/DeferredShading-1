@@ -14,18 +14,10 @@
     <None Include="..\..\..\DXUT\Optional\directx.ico">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="Deferred.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
     <None Include="Light.hlsl">
       <Filter>Shaders</Filter>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="Tutorial08.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="Tutorial08.fx">
+    <None Include="GBuffer.hlsl">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>
@@ -33,8 +25,13 @@
     <CLInclude Include="resource.h">
       <Filter>Resource Files</Filter>
     </CLInclude>
-    <ResourceCompile Include="Tutorial08.rc">
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="DeferredShading.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="DeferredShading.cpp" />
   </ItemGroup>
 </Project>

@@ -34,12 +34,29 @@ struct CBChangesEveryFrame
 	XMFLOAT4X4 mProj;
 };
 
-struct LightBufferType
+struct LightBuffer
 {
-	XMFLOAT3 lightDirection;
-	float padding;
+	XMFLOAT3 LightPos;
+	XMFLOAT4 LightColor;
+
+	float Constant;
+	float Linear;
+	float Quadratic;
+
+	XMFLOAT3 Ambient;
+	XMFLOAT3 Diffuse;
+	XMFLOAT3 Specular;
 };
 
+struct FrustumBuffer
+{
+	XMFLOAT3 ViewPos;
+	float NearZ;
+	float FarZ;
+	XMFLOAT3 Vx;
+	XMFLOAT3 Vy;
+	XMFLOAT3 Look;
+};
 //--------------------------------------------------------------------------------------
 // Global Variables
 //--------------------------------------------------------------------------------------
@@ -58,6 +75,7 @@ ID3D11Buffer*               g_pLightPixelBuffer = nullptr;
 ID3D11Buffer*               g_pIndexBuffer = nullptr;
 ID3D11Buffer*               g_pQuadIndexBuffer = nullptr;
 ID3D11Buffer*               g_pCBChangesEveryFrame = nullptr;
+ID3D11Buffer*				g_pFrustumBuffer = nullptr;
 ID3D11ShaderResourceView*   g_pTextureRV = nullptr;
 ID3D11SamplerState*         g_pSamplerLinear = nullptr;
 ID3D11SamplerState*         g_pSamplerLight = nullptr;
@@ -78,6 +96,8 @@ ID3D11RasterizerState*		g_rasterStateNoCulling = nullptr;
 ID3D11BlendState*			g_alphaEnableBlendingState = nullptr;
 ID3D11BlendState*			g_alphaDisableBlendingState = nullptr;
 D3D11_VIEWPORT				g_viewport;
+LightBuffer*				lights = nullptr;
+FrustumBuffer*				frustumBuffer = nullptr;
 
 SimpleVertex vertices[] =
 {
@@ -323,7 +343,7 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
 
     // Compile the vertex shader
     ID3DBlob* pVSBlob = nullptr;
-    V_RETURN( DXUTCompileFromFile( L"Deferred.hlsl", nullptr, "VS", "vs_4_0", dwShaderFlags, 0, &pVSBlob ) );
+    V_RETURN( DXUTCompileFromFile( L"GBuffer.hlsl", nullptr, "VS", "vs_4_0", dwShaderFlags, 0, &pVSBlob ) );
 
     // Create the vertex shader
     hr = pd3dDevice->CreateVertexShader( pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), nullptr, &g_pVertexShader );
@@ -354,7 +374,7 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
 
     // Compile the pixel shader
     ID3DBlob* pPSBlob  = nullptr;
-    V_RETURN( DXUTCompileFromFile( L"Deferred.hlsl", nullptr, "PS", "ps_4_0", dwShaderFlags, 0, &pPSBlob  ) );
+    V_RETURN( DXUTCompileFromFile( L"GBuffer.hlsl", nullptr, "PS", "ps_4_0", dwShaderFlags, 0, &pPSBlob  ) );
 
     // Create the pixel shader
     hr = pd3dDevice->CreatePixelShader( pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), nullptr, &g_pPixelShader );
@@ -388,16 +408,28 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
     bd.ByteWidth = sizeof(CBChangesEveryFrame);
     V_RETURN( pd3dDevice->CreateBuffer( &bd, nullptr, &g_pCBChangesEveryFrame ) );
 
+
 	RenderBuffers(pd3dImmediateContext, &g_pVertexBuffer, g_pIndexBuffer);
 
     // Initialize the world matrices
 	g_World = XMMatrixIdentity();
 	
 	// Initialize the view matrix
-	XMVECTORF32 s_Eye = { 0.0f, 3.0f, -6.0f, 0.f };
-	XMVECTORF32 s_At = { 0.0f, 1.0f, 0.0f, 0.f };
-	XMVECTORF32 s_Up = { 0.0f, 1.0f, 0.0f, 0.f };
+	XMVECTOR s_Eye = { 0.0f, 3.0f, -6.0f, 0.f };
+	XMVECTOR s_At = { 0.0f, 1.0f, 0.0f, 0.f };
+	XMVECTOR s_Up = { 0.0f, 1.0f, 0.0f, 0.f };
+	XMVECTOR s_Look = XMVector3Normalize(s_At - s_Eye);
+	XMVECTOR s_Right = XMVector3Cross(s_Up, s_Look);
+	s_Up = XMVector3Cross(s_Right, s_Look);
 	g_View = XMMatrixLookAtLH(s_Eye, s_At, s_Up);
+	frustumBuffer = new FrustumBuffer();
+	frustumBuffer->NearZ = 0.1f;
+	frustumBuffer->FarZ = 100.0f;
+	XMStoreFloat3(&frustumBuffer->Look, s_Look * frustumBuffer->FarZ);
+	XMStoreFloat3(&frustumBuffer->Vy, s_Up);
+	XMStoreFloat3(&frustumBuffer->Vx, s_Up);
+
+
 
 	// Load the Texture
 	V_RETURN(DXUTCreateShaderResourceViewFromFile(pd3dDevice, L"seafloor.dds", &g_pTextureRV));
@@ -416,7 +448,6 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
 
 
 	InitializeQuadBuffers(pd3dDevice, screen_width, screen_height);
-	s_Eye = { 0.0f, 0.0f, -1.0f, 0.f };
 
 	D3D11_TEXTURE2D_DESC textureDesc;
 	D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
@@ -665,15 +696,22 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
 	D3D11_BUFFER_DESC lightbd;
 	ZeroMemory(&lightbd, sizeof(lightbd));
 	lightbd.Usage = D3D11_USAGE_DYNAMIC;
-	lightbd.ByteWidth = sizeof(LightBufferType);
+	lightbd.ByteWidth = sizeof(LightBuffer);
 	lightbd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
 	lightbd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 	lightbd.MiscFlags = 0;
 	lightbd.StructureByteStride = 0;
-	//D3D11_SUBRESOURCE_DATA InitData;
-	//ZeroMemory(&InitData, sizeof(InitData));
-	//InitData.pSysMem = vertices;
 	V_RETURN(pd3dDevice->CreateBuffer(&lightbd, NULL, &g_pLightPixelBuffer));
+
+	D3D11_BUFFER_DESC frustumbd;
+	ZeroMemory(&frustumbd, sizeof(frustumbd));
+	frustumbd.Usage = D3D11_USAGE_DYNAMIC;
+	frustumbd.ByteWidth = sizeof(FrustumBuffer);
+	frustumbd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	frustumbd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	frustumbd.MiscFlags = 0;
+	frustumbd.StructureByteStride = 0;
+	V_RETURN(pd3dDevice->CreateBuffer(&frustumbd, NULL, &g_pFrustumBuffer));
 
 //	SetRenderTargets(pd3dImmediateContext);
 //	RenderBuffers(pd3dImmediateContext,g_pVertexBuffer,g_pIndexBuffer);
@@ -806,8 +844,6 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
 	//
 	// Light
 	//
-
-
 	V(pd3dImmediateContext->Map(g_pCBChangesEveryFrame, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
 	pCB = reinterpret_cast<CBChangesEveryFrame*>(MappedResource.pData);
 	XMStoreFloat4x4(&pCB->mWorld, XMMatrixTranspose(g_World));
@@ -818,10 +854,10 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
 	pd3dImmediateContext->VSSetShader(g_pLightVertexShader, nullptr, 0);
 	pd3dImmediateContext->VSSetConstantBuffers(0, 1, &g_pCBChangesEveryFrame);
 
-	V(pd3dImmediateContext->Map(g_pLightPixelBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
-	auto pData = reinterpret_cast<LightBufferType*>(MappedResource.pData);
-	pData->lightDirection= XMFLOAT3(0.0f, 0.0f, 1.0f);
-	pData->padding = 0.0f;
+	V(pd3dImmediateContext->Map(g_pLightPixelBuffer, 1, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
+	auto pData = reinterpret_cast<LightBuffer*>(MappedResource.pData);
+	auto pLB = reinterpret_cast<LightBuffer*>(MappedResource.pData);
+	pLB = lights;
 	pd3dImmediateContext->Unmap(g_pLightPixelBuffer, 1);
 
 	pd3dImmediateContext->PSSetConstantBuffers(1, 1, &g_pLightPixelBuffer);
@@ -886,6 +922,7 @@ void CALLBACK OnD3D11DestroyDevice( void* pUserContext )
 	SAFE_RELEASE(g_rasterStateNoCulling);
 	SAFE_RELEASE(g_alphaEnableBlendingState);
 	SAFE_RELEASE(g_alphaDisableBlendingState);
+	SAFE_RELEASE(g_pFrustumBuffer);
 	for (int i = 0; i < BUFFER_COUNT; ++i)
 	{
 		SAFE_RELEASE(g_renderTargetViewArray[i]);

@@ -12,9 +12,9 @@ SamplerState samLinear : register(s0);
 
 cbuffer cbChangesEveryFrame : register(b0)
 {
-	matrix World;
-	matrix View;
-	matrix Proj;
+    matrix World;
+    matrix View;
+    matrix Proj;
 };
 
 
@@ -39,18 +39,6 @@ struct PS_OUTPUT
 	float4 Normal:SV_Target1;
 };
 
-struct PointLight
-{
-	float3 position;
-	float constant;
-	float linearic;
-	float quadratic;
-
-	float3 ambient;
-	float3 diffuse;
-	float3 specular;
-};
-
 //--------------------------------------------------------------------------------------
 // Vertex Shader
 //--------------------------------------------------------------------------------------
@@ -58,8 +46,8 @@ PS_INPUT VS(VS_INPUT input)
 {
 	PS_INPUT output = (PS_INPUT)0;
 	output.Pos = mul(input.Pos, World);
-	output.Pos = mul(output.Pos, View);
-	output.Pos = mul(output.Pos, Proj);
+    output.Pos = mul(output.Pos, View);
+    output.Pos = mul(output.Pos, Proj);
 	output.Tex = input.Tex;
 	output.Normal = mul(input.Normal, (float3x3)World);
 	output.Normal = normalize(output.Normal);
@@ -73,9 +61,9 @@ PS_INPUT VS(VS_INPUT input)
 //--------------------------------------------------------------------------------------
 PS_OUTPUT PS(PS_INPUT input) : SV_Target
 {
-	PS_OUTPUT output = (PS_OUTPUT)0;
-output.Color = txDiffuse.Sample(samLinear, input.Tex);
-output.Normal = float4(input.Normal, 1.0f);
+    PS_OUTPUT output = (PS_OUTPUT) 0;
+	output.Color = txDiffuse.Sample(samLinear, input.Tex);
+	output.Normal = float4(input.Normal, input.Pos.z);
 
-return output;
+	return output;
 }

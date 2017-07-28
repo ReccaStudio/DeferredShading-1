@@ -372,7 +372,7 @@
     <None Include="..\..\..\DXUT\Optional\directx.ico" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Tutorial08.cpp">
+    <ClCompile Include="DeferredShading.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Profile|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
@@ -382,11 +382,8 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Tutorial08.fx" />
-  </ItemGroup>
-  <ItemGroup>
     <CLInclude Include="resource.h" />
-    <ResourceCompile Include="Tutorial08.rc" />
+    <ResourceCompile Include="DeferredShading.rc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DXUT\Core\DXUT_2012.vcxproj">
@@ -397,7 +394,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Deferred.hlsl">
+    <None Include="GBuffer.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Profile|Win32'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>
