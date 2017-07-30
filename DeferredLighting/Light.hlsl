@@ -19,29 +19,42 @@ cbuffer cbChangesEveryFrame : register(b0)
     matrix Proj;
 };
 
-cbuffer LightBuffer : register(b1)
-{
-    float3 LightPos;
-    float4 LightColor;
-
-    float Constant;
-    float Linear;
-    float Quadratic;
-
-    float3 Ambient;
-    float3 Diffuse;
-    float3 Specular;
-};
-
-cbuffer FrustumBuffer : register(b2)
+cbuffer FrustumBuffer : register(b1)
 {
     float3 ViewPos;
     float NearZ;
     float FarZ;
     float3 Vx;
     float3 Vy;
+    float Aspect;
+    float tanFov;
     float3 Look;
+
 };
+
+struct LightPos
+{
+    float3 LightPos;
+    float Lpad1;
+    float4 LightColor;
+
+    float4 Ambient;
+    float4 Diffuse;
+    float4 Specular;
+
+    float Constant;
+    float Linear;
+    float Quadratic;
+
+    float Lpad2;
+};
+
+
+cbuffer LightBuffer : register(b2)
+{
+    LightPos lights[1024];
+};
+
 
 //--------------------------------------------------------------------------------------
 struct VS_INPUT
@@ -72,36 +85,58 @@ PS_INPUT VS(VS_INPUT input)
 //--------------------------------------------------------------------------------------
 // Pixel Shader
 //--------------------------------------------------------------------------------------
+float4 CaculateLights(float3 worldPos, float3 viewDir,float4 normals,LightPos light)
+{
+    float4 color;
+    float3 lightDir;
+    float3 halfDir;
+    float diff;
+    float spec;
+    float attenuation;
+    float distance;
+    float4 colors;
+
+    lightDir = normalize(light.LightPos - worldPos);
+    diff = max(dot(normals.xyz, lightDir), 0.0);
+    
+    halfDir = normalize(lightDir + viewDir);
+    spec = pow(max(dot(halfDir, normals.xyz), 0.0), 10);
+
+    distance = length(viewDir);
+    attenuation = 1.0f / (light.Constant + light.Linear * distance + light.Quadratic * (distance * distance));
+
+    colors = (light.Ambient + spec * light.Specular + diff * light.Diffuse) * light.LightColor * attenuation;
+    colors.w = 1.0f;
+    return colors;
+}
+
 float4 PS(PS_INPUT input) : SV_Target
 {
     float ratio;
     float4 colors;
     float4 normals;
-    float3 lightDir;
     float4 outputColor;
     float3 worldPos;
     float3 viewDir;
-    float3 halfDir;
-    float diff;
-    float spec;
-    float ambient;
-    float attenuation;
+    float lightColors;
 
     colors = txDiffuse.Sample(samLinear, input.Tex);
     normals = normalTexture.Sample(samLinear, input.Tex);
-    ratio = 1 / (FarZ - NearZ) * (1 - NearZ / normals.w);
-    viewDir = (input.Pos.x * Vx + input.Pos.y * Vy + Look) * ratio;
+    if (normals.x == 0.f && normals.y == 0.f
+       && normals.z == 0.f && normals.w == 1.0f)
+    {
+        return saturate(colors);
+    }
+
+    //ratio = 1 / (FarZ - NearZ) * (1 - NearZ / normals.w);
+    ratio = NearZ / (FarZ - (FarZ - NearZ) * normals.w);
+    viewDir = (input.Pos.x * Vx * Aspect + input.Pos.y * Vy) * ratio + Look * ratio;
     worldPos = viewDir + ViewPos;
     
-    lightDir = normalize(LightPos - worldPos);
-    diff = max(dot(normals.xyz, lightDir),0.0);
-    
-    halfDir = normalize(lightDir + viewDir);
-    spec = pow(max(dot(halfDir, normals.xyz), 0.0), 10);
-
-    ambient = Ambient;
-    
-    //colors += (ambient + spec + diff) * LightColor;
+    for (int i = 0; i < 1024;i++)
+        lightColors += CaculateLights(worldPos,viewDir,normals, lights[i]);
+   
+    colors *= lightColors;
 
     outputColor = saturate(colors);
     return outputColor;

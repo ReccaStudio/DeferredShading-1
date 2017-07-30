@@ -1,17 +1,7 @@
-//--------------------------------------------------------------------------------------
-// File: Tutorial08.cpp
-//
-// Basic introduction to DXUT
-//
-// THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF
-// ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-// THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A
-// PARTICULAR PURPOSE.
-//
-// Copyright (c) Microsoft Corporation. All rights reserved.
-//--------------------------------------------------------------------------------------
+
 #include "DXUT.h"
 #include "SDKmisc.h"
+#include <sstream>
 
 #pragma warning( disable : 4100 )
 
@@ -37,15 +27,18 @@ struct CBChangesEveryFrame
 struct LightBuffer
 {
 	XMFLOAT3 LightPos;
+	float Lpad1;
 	XMFLOAT4 LightColor;
+
+	XMFLOAT4 Ambient;
+	XMFLOAT4 Diffuse;
+	XMFLOAT4 Specular;
 
 	float Constant;
 	float Linear;
 	float Quadratic;
 
-	XMFLOAT3 Ambient;
-	XMFLOAT3 Diffuse;
-	XMFLOAT3 Specular;
+	float Lpad2;
 };
 
 struct FrustumBuffer
@@ -55,6 +48,8 @@ struct FrustumBuffer
 	float FarZ;
 	XMFLOAT3 Vx;
 	XMFLOAT3 Vy;
+	float Aspect;
+	float tanFov;
 	XMFLOAT3 Look;
 };
 //--------------------------------------------------------------------------------------
@@ -98,67 +93,136 @@ ID3D11BlendState*			g_alphaDisableBlendingState = nullptr;
 D3D11_VIEWPORT				g_viewport;
 LightBuffer*				lights = nullptr;
 FrustumBuffer*				frustumBuffer = nullptr;
+SimpleVertex*				cubes = nullptr;
+DWORD*						indices = nullptr;
+XMVECTOR s_Eye;
+XMVECTOR s_At;
+XMVECTOR s_Up;
+XMVECTOR s_Look;
+XMVECTOR s_Right;
 
-SimpleVertex vertices[] =
-{
-	{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT2(1.0f, 0.0f),XMFLOAT3(0.0f,1.0f,0.0f) },
-	{ XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT2(0.0f, 0.0f),XMFLOAT3(0.0f,1.0f,0.0f) },
-	{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT2(0.0f, 1.0f),XMFLOAT3(0.0f,1.0f,0.0f) },
-	{ XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT2(1.0f, 1.0f),XMFLOAT3(0.0f,1.0f,0.0f) },
-
-	{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT2(0.0f, 0.0f),XMFLOAT3(0.0f,-1.0f,0.0f) },
-	{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT2(1.0f, 0.0f),XMFLOAT3(0.0f,-1.0f,0.0f) },
-	{ XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT2(1.0f, 1.0f),XMFLOAT3(0.0f,-1.0f,0.0f) },
-	{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT2(0.0f, 1.0f),XMFLOAT3(0.0f,-1.0f,0.0f) },
-
-	{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT2(0.0f, 1.0f),XMFLOAT3(-1.0f,0.0f,0.0f) },
-	{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT2(1.0f, 1.0f),XMFLOAT3(-1.0f,0.0f,0.0f) },
-	{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT2(1.0f, 0.0f),XMFLOAT3(-1.0f,0.0f,0.0f) },
-	{ XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT2(0.0f, 0.0f),XMFLOAT3(-1.0f,0.0f,0.0f) },
-
-	{ XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT2(1.0f, 1.0f),XMFLOAT3(1.0f,0.0f,0.0f) },
-	{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT2(0.0f, 1.0f),XMFLOAT3(1.0f,0.0f,0.0f) },
-	{ XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT2(0.0f, 0.0f),XMFLOAT3(1.0f,0.0f,0.0f) },
-	{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT2(1.0f, 0.0f),XMFLOAT3(1.0f,0.0f,0.0f) },
-
-	{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT2(0.0f, 1.0f),XMFLOAT3(0.0f,0.0f,-1.0f) },
-	{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT2(1.0f, 1.0f),XMFLOAT3(0.0f,0.0f,-1.0f) },
-	{ XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT2(1.0f, 0.0f),XMFLOAT3(0.0f,0.0f,-1.0f) },
-	{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT2(0.0f, 0.0f),XMFLOAT3(0.0f,0.0f,-1.0f) },
-
-	{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT2(1.0f, 1.0f),XMFLOAT3(0.0f,0.0f,1.0f) },
-	{ XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT2(0.0f, 1.0f),XMFLOAT3(0.0f,0.0f,1.0f) },
-	{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT2(0.0f, 0.0f),XMFLOAT3(0.0f,0.0f,1.0f) },
-	{ XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT2(1.0f, 0.0f),XMFLOAT3(0.0f,0.0f,1.0f) },
-};
-
-DWORD indices[] =
-{
-	3,1,0,
-	2,1,3,
-
-	6,4,5,
-	7,4,6,
-
-	11,9,8,
-	10,9,11,
-
-	14,12,13,
-	15,12,14,
-
-	19,17,16,
-	18,17,19,
-
-	22,20,21,
-	23,20,22
-};
-
+void InitializeCubesLights();
 void SetRenderTargets(ID3D11DeviceContext* deviceContext);
 void SetRenderTargets(ID3D11DeviceContext* deviceContext);
 void TurnZBufferOn(ID3D11DeviceContext* deviceContext);
 void TurnZBufferOff(ID3D11DeviceContext* deviceContext);
 void SetBackBufferRenderTarget(ID3D11DeviceContext* deviceContext);
 void ResetViewport(ID3D11DeviceContext* deviceContext);
+
+void UpdateView()
+{
+	s_Look = XMVector3Normalize(s_At - s_Eye);
+	s_Right = XMVector3Normalize(XMVector3Cross(s_Up, s_Look));
+	s_Up = XMVector3Normalize(XMVector3Cross(s_Look, s_Right));
+	g_View = XMMatrixLookAtLH(s_Eye, s_At, s_Up);
+	frustumBuffer = new FrustumBuffer();
+	frustumBuffer->NearZ = 0.1f;
+	frustumBuffer->FarZ = 100.0f;
+	XMStoreFloat3(&frustumBuffer->Look, s_Look * frustumBuffer->FarZ);
+	XMStoreFloat3(&frustumBuffer->Vy, s_Up);
+	XMStoreFloat3(&frustumBuffer->Vx, s_Right);
+	XMStoreFloat3(&frustumBuffer->ViewPos, s_Eye);
+}
+
+void InitializeCubesLights()
+{
+	SimpleVertex cube[] =
+	{
+		{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT2(1.0f, 0.0f),XMFLOAT3(0.0f,1.0f,0.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, -1.0f),	XMFLOAT2(0.0f, 0.0f),XMFLOAT3(0.0f,1.0f,0.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, 1.0f),	XMFLOAT2(0.0f, 1.0f),XMFLOAT3(0.0f,1.0f,0.0f) },
+		{ XMFLOAT3(-1.0f, 1.0f, 1.0f),	XMFLOAT2(1.0f, 1.0f),XMFLOAT3(0.0f,1.0f,0.0f) },
+
+		{ XMFLOAT3(-1.0f, -1.0f, -1.0f),XMFLOAT2(0.0f, 0.0f),XMFLOAT3(0.0f,-1.0f,0.0f) },
+		{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT2(1.0f, 0.0f),XMFLOAT3(0.0f,-1.0f,0.0f) },
+		{ XMFLOAT3(1.0f, -1.0f, 1.0f),	XMFLOAT2(1.0f, 1.0f),XMFLOAT3(0.0f,-1.0f,0.0f) },
+		{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT2(0.0f, 1.0f),XMFLOAT3(0.0f,-1.0f,0.0f) },
+
+		{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT2(0.0f, 1.0f),XMFLOAT3(-1.0f,0.0f,0.0f) },
+		{ XMFLOAT3(-1.0f, -1.0f, -1.0f),XMFLOAT2(1.0f, 1.0f),XMFLOAT3(-1.0f,0.0f,0.0f) },
+		{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT2(1.0f, 0.0f),XMFLOAT3(-1.0f,0.0f,0.0f) },
+		{ XMFLOAT3(-1.0f, 1.0f, 1.0f),	XMFLOAT2(0.0f, 0.0f),XMFLOAT3(-1.0f,0.0f,0.0f) },
+
+		{ XMFLOAT3(1.0f, -1.0f, 1.0f),	XMFLOAT2(1.0f, 1.0f),XMFLOAT3(1.0f,0.0f,0.0f) },
+		{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT2(0.0f, 1.0f),XMFLOAT3(1.0f,0.0f,0.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, -1.0f),	XMFLOAT2(0.0f, 0.0f),XMFLOAT3(1.0f,0.0f,0.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, 1.0f),	XMFLOAT2(1.0f, 0.0f),XMFLOAT3(1.0f,0.0f,0.0f) },
+
+		{ XMFLOAT3(-1.0f, -1.0f, -1.0f),XMFLOAT2(0.0f, 1.0f),XMFLOAT3(0.0f,0.0f,-1.0f) },
+		{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT2(1.0f, 1.0f),XMFLOAT3(0.0f,0.0f,-1.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, -1.0f),	XMFLOAT2(1.0f, 0.0f),XMFLOAT3(0.0f,0.0f,-1.0f) },
+		{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT2(0.0f, 0.0f),XMFLOAT3(0.0f,0.0f,-1.0f) },
+
+		{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT2(1.0f, 1.0f),XMFLOAT3(0.0f,0.0f,1.0f) },
+		{ XMFLOAT3(1.0f, -1.0f, 1.0f),	XMFLOAT2(0.0f, 1.0f),XMFLOAT3(0.0f,0.0f,1.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, 1.0f),	XMFLOAT2(0.0f, 0.0f),XMFLOAT3(0.0f,0.0f,1.0f) },
+		{ XMFLOAT3(-1.0f, 1.0f, 1.0f),	XMFLOAT2(1.0f, 0.0f),XMFLOAT3(0.0f,0.0f,1.0f) },
+	};
+
+	DWORD index[] =
+	{
+		3,1,0,
+		2,1,3,
+
+		6,4,5,
+		7,4,6,
+
+		11,9,8,
+		10,9,11,
+
+		14,12,13,
+		15,12,14,
+
+		19,17,16,
+		18,17,19,
+
+		22,20,21,
+		23,20,22
+	};
+
+	lights = new LightBuffer[1024]();
+	lights[0].LightColor = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	lights[0].LightPos = XMFLOAT3(0.0f, 1.5f, 0.0f);
+	lights[0].Ambient = XMFLOAT4(0.1f, 0.1f, 0.1f, 1.0f);
+	lights[0].Diffuse = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	lights[0].Specular = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	lights[0].Constant = 1.0f;
+	lights[0].Linear = 0.009f;
+	lights[0].Quadratic = 0.003f;
+
+	cubes = new SimpleVertex[1024*24]();
+	indices = new DWORD[1024 * 36]();
+	float interval = 3.0f;
+	for (int i = 0; i < 32; ++i)
+	{
+		for (int j = 0; j < 32; ++j)
+		{
+			if (i != 0 && j != 0)
+			{
+				//lights[(i * 32 + j)].LightColor = lights[0].LightColor;
+				lights[(i * 32 + j)].LightPos = XMFLOAT3(lights[0].LightPos.x + (i - 16) * interval,lights[0].LightPos.y,lights[0].LightPos.z + (j - 16) * interval);
+				lights[(i * 32 + j)].LightPos = XMFLOAT3(lights[0].LightPos.x + i * interval, lights[0].LightPos.y, lights[0].LightPos.z + j * interval);
+				lights[(i * 32 + j)].Ambient = lights[0].Ambient;
+				lights[(i * 32 + j)].Diffuse = lights[0].Diffuse;
+				lights[(i * 32 + j)].Specular = lights[0].Specular;
+				lights[(i * 32 + j)].Constant = lights[0].Constant;
+				lights[(i * 32 + j)].Linear = lights[0].Linear;
+				lights[(i * 32 + j)].Quadratic = lights[0].Quadratic;
+			}
+			for (int k = 0; k < 24; ++k)
+			{
+				cubes[(i * 32 + j) * 24 + k].Pos = XMFLOAT3(cube[k].Pos.x + (i-16) * interval, cube[k].Pos.y, cube[k].Pos.z + (j - 16) * interval);
+				//cubes[(i * 32 + j) * 24 + k].Pos = XMFLOAT3(cube[k].Pos.x + (i-16) * interval, cube[k].Pos.y, cube[k].Pos.z + (j - 16) * interval);
+				cubes[(i * 32 + j) * 24 + k].Tex = cube[k].Tex;
+				cubes[(i * 32 + j) * 24 + k].Normal = cube[k].Normal;
+			}
+			for (int k = 0; k < 36; ++k)
+			{
+				indices[(i * 32 + j)*36 + k] = index[k] + (i * 32 + j) * 24;
+			}
+		}
+	}
+}
 
 bool InitializeQuadBuffers(ID3D11Device* device, int windowWidth, int windowHeight)
 {
@@ -326,7 +390,7 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
                                       void* pUserContext )
 {
     HRESULT hr = S_OK;
-
+	auto size = sizeof(LightBuffer);
     auto pd3dImmediateContext = DXUTGetD3D11DeviceContext();
 
     DWORD dwShaderFlags = D3DCOMPILE_ENABLE_STRICTNESS;
@@ -385,16 +449,16 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
     D3D11_BUFFER_DESC bd;
     ZeroMemory( &bd, sizeof(bd) );
     bd.Usage = D3D11_USAGE_DEFAULT;
-    bd.ByteWidth = sizeof( SimpleVertex ) * 24;
+    bd.ByteWidth = sizeof( SimpleVertex ) * 24 * 1024;
     bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
     bd.CPUAccessFlags = 0;
     D3D11_SUBRESOURCE_DATA InitData;
     ZeroMemory( &InitData, sizeof(InitData) );
-    InitData.pSysMem = vertices;
+    InitData.pSysMem = cubes;
     V_RETURN( pd3dDevice->CreateBuffer( &bd, &InitData, &g_pVertexBuffer ) );
 
     bd.Usage = D3D11_USAGE_DEFAULT;
-    bd.ByteWidth = sizeof( DWORD ) * 36;
+    bd.ByteWidth = sizeof( DWORD ) * 36 *1024;
     bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
     bd.CPUAccessFlags = 0;
     bd.MiscFlags = 0;
@@ -415,21 +479,11 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
 	g_World = XMMatrixIdentity();
 	
 	// Initialize the view matrix
-	XMVECTOR s_Eye = { 0.0f, 3.0f, -6.0f, 0.f };
-	XMVECTOR s_At = { 0.0f, 1.0f, 0.0f, 0.f };
-	XMVECTOR s_Up = { 0.0f, 1.0f, 0.0f, 0.f };
-	XMVECTOR s_Look = XMVector3Normalize(s_At - s_Eye);
-	XMVECTOR s_Right = XMVector3Cross(s_Up, s_Look);
-	s_Up = XMVector3Cross(s_Right, s_Look);
-	g_View = XMMatrixLookAtLH(s_Eye, s_At, s_Up);
-	frustumBuffer = new FrustumBuffer();
-	frustumBuffer->NearZ = 0.1f;
-	frustumBuffer->FarZ = 100.0f;
-	XMStoreFloat3(&frustumBuffer->Look, s_Look * frustumBuffer->FarZ);
-	XMStoreFloat3(&frustumBuffer->Vy, s_Up);
-	XMStoreFloat3(&frustumBuffer->Vx, s_Up);
-
-
+	s_Eye = { 0.0f, 20.0f, 20.0f, 0.f };
+	s_At = { 0.0f, 0.0f, 0.0f, 0.f };
+	s_Up = { 0.0f, 1.0f, 0.0f, 0.f };
+	UpdateView();
+	
 
 	// Load the Texture
 	V_RETURN(DXUTCreateShaderResourceViewFromFile(pd3dDevice, L"seafloor.dds", &g_pTextureRV));
@@ -696,7 +750,7 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
 	D3D11_BUFFER_DESC lightbd;
 	ZeroMemory(&lightbd, sizeof(lightbd));
 	lightbd.Usage = D3D11_USAGE_DYNAMIC;
-	lightbd.ByteWidth = sizeof(LightBuffer);
+	lightbd.ByteWidth = sizeof(LightBuffer)*1024;
 	lightbd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
 	lightbd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 	lightbd.MiscFlags = 0;
@@ -732,10 +786,8 @@ void SetRenderTargets(ID3D11DeviceContext* deviceContext)
 
 void ClearRenderTargets(ID3D11DeviceContext* deviceContext)
 {
-	for (int i = 0; i<BUFFER_COUNT; i++)
-	{
-		deviceContext->ClearRenderTargetView(g_renderTargetViewArray[i], Colors::MidnightBlue);
-	}
+	deviceContext->ClearRenderTargetView(g_renderTargetViewArray[0], Colors::MidnightBlue);
+	deviceContext->ClearRenderTargetView(g_renderTargetViewArray[1], Colors::Black);
 
 	// Clear the depth buffer.
 	deviceContext->ClearDepthStencilView(g_depthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
@@ -773,6 +825,11 @@ HRESULT CALLBACK OnD3D11ResizedSwapChain( ID3D11Device* pd3dDevice, IDXGISwapCha
     // Setup the projection parameters
     float fAspect = static_cast<float>( pBackBufferSurfaceDesc->Width ) / static_cast<float>( pBackBufferSurfaceDesc->Height );
     g_Projection = XMMatrixPerspectiveFovLH( XM_PI * 0.25f, fAspect, 0.1f, 100.0f );
+	float    SinFov;
+	float    CosFov;
+	XMScalarSinCos(&SinFov, &CosFov, 0.5f * XM_PI * 0.25f);
+	frustumBuffer->Aspect = fAspect;
+	frustumBuffer->tanFov = SinFov / CosFov;
     return S_OK;
 }
 
@@ -782,8 +839,22 @@ HRESULT CALLBACK OnD3D11ResizedSwapChain( ID3D11Device* pd3dDevice, IDXGISwapCha
 //--------------------------------------------------------------------------------------
 void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext )
 {
+	static int frameCnt = 0;
+	static float timeElapsed=0.0f;
+	frameCnt++;
+	if (fTime - timeElapsed >= 1.0f)
+	{
+		float fps = (float)frameCnt; 
+		std::wstring fpsStr = std::to_wstring(fps);
+		std::wstring windowText = L"DeferredShading    fps: " + fpsStr;
+		SetWindowText(DXUTGetHWNDDeviceWindowed(), windowText.c_str());
+
+		frameCnt = 0;
+		timeElapsed += 1.0f;
+	}
+
     // Rotate cube around the origin
-    g_World = XMMatrixRotationY( 60.0f * XMConvertToRadians((float)fTime) );
+    //g_World = XMMatrixRotationY( 60.0f * XMConvertToRadians((float)fTime) );
 
     // Modify the color
     //g_vMeshColor.x = ( sinf( ( float )fTime * 1.0f ) + 1.0f ) * 0.5f;
@@ -828,7 +899,7 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
 	pd3dImmediateContext->PSSetShader(g_pPixelShader, nullptr, 0);
 
 	pd3dImmediateContext->PSSetSamplers(0, 1, &g_pSamplerLinear);
-	pd3dImmediateContext->DrawIndexed(36, 0, 0);
+	pd3dImmediateContext->DrawIndexed(36*1024, 0, 0);
 
 	SetBackBufferRenderTarget(pd3dImmediateContext);
 	ResetViewport(pd3dImmediateContext);
@@ -854,13 +925,19 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
 	pd3dImmediateContext->VSSetShader(g_pLightVertexShader, nullptr, 0);
 	pd3dImmediateContext->VSSetConstantBuffers(0, 1, &g_pCBChangesEveryFrame);
 
-	V(pd3dImmediateContext->Map(g_pLightPixelBuffer, 1, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
-	auto pData = reinterpret_cast<LightBuffer*>(MappedResource.pData);
+	V(pd3dImmediateContext->Map(g_pLightPixelBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
 	auto pLB = reinterpret_cast<LightBuffer*>(MappedResource.pData);
-	pLB = lights;
-	pd3dImmediateContext->Unmap(g_pLightPixelBuffer, 1);
+	*pLB = *lights;
+	pd3dImmediateContext->Unmap(g_pLightPixelBuffer, 0);
 
-	pd3dImmediateContext->PSSetConstantBuffers(1, 1, &g_pLightPixelBuffer);
+	V(pd3dImmediateContext->Map(g_pFrustumBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
+	auto pFB = reinterpret_cast<FrustumBuffer*>(MappedResource.pData);
+	*pFB = *frustumBuffer;
+	pd3dImmediateContext->Unmap(g_pFrustumBuffer, 0);
+
+	pd3dImmediateContext->PSSetConstantBuffers(1, 1, &g_pFrustumBuffer);
+	pd3dImmediateContext->PSSetConstantBuffers(2, 1024, &g_pLightPixelBuffer);
+
 	pd3dImmediateContext->PSSetShaderResources(0, 1, &g_shaderResourceViewArray[0]);//color
 	pd3dImmediateContext->PSSetShaderResources(1, 1, &g_shaderResourceViewArray[1]);//normal
 
@@ -915,7 +992,6 @@ void CALLBACK OnD3D11DestroyDevice( void* pUserContext )
 	SAFE_RELEASE(g_pQuadIndexBuffer);
 	SAFE_RELEASE(g_pSamplerLinear);
 	SAFE_RELEASE(g_pSamplerLight);
-	SAFE_RELEASE(g_renderTargetView);
 	SAFE_RELEASE(g_depthStencilState);
 	SAFE_RELEASE(g_depthDisabledStencilState);
 	SAFE_RELEASE(g_rasterState);
@@ -953,6 +1029,22 @@ void CALLBACK OnKeyboard( UINT nChar, bool bKeyDown, bool bAltDown, void* pUserC
         {
             case VK_F1: // Change as needed                
                 break;
+			case 'W':
+			{
+				XMVECTOR s = XMVectorReplicate(0.1);
+
+				s_Eye=XMVectorMultiplyAdd(s, s_Up, s_Eye);
+
+				UpdateView();
+			}break;
+			case 'S':
+			{
+				XMVECTOR s = XMVectorReplicate(-0.1);
+
+				s_Eye = XMVectorMultiplyAdd(s, s_Up, s_Eye);
+
+				UpdateView();
+			}break;
         }
     }
 }
@@ -972,6 +1064,7 @@ bool CALLBACK OnDeviceRemoved( void* pUserContext )
 //--------------------------------------------------------------------------------------
 int WINAPI wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow )
 {
+	InitializeCubesLights();
     // Enable run-time memory check for debug builds.
 #ifdef _DEBUG
     _CrtSetDbgFlag( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
@@ -999,7 +1092,7 @@ int WINAPI wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
 
     DXUTInit( true, true, nullptr ); // Parse the command line, show msgboxes on error, no extra command line params
     DXUTSetCursorSettings( true, true ); // Show the cursor and clip it when in full screen
-    DXUTCreateWindow( L"Tutorial08" );
+    DXUTCreateWindow( L"DeferredShading" );
 
     // Only require 10-level hardware or later
     DXUTCreateDevice( D3D_FEATURE_LEVEL_11_0, true, screen_width, screen_height );
@@ -1009,3 +1102,4 @@ int WINAPI wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
 
     return DXUTGetExitCode();
 }
+
