@@ -51,6 +51,8 @@ struct FrustumBuffer
 	float Aspect;
 	float tanFov;
 	XMFLOAT3 Look;
+
+	XMFLOAT4X4 InvView;
 };
 //--------------------------------------------------------------------------------------
 // Global Variables
@@ -115,7 +117,9 @@ void UpdateView()
 	s_Right = XMVector3Normalize(XMVector3Cross(s_Up, s_Look));
 	s_Up = XMVector3Normalize(XMVector3Cross(s_Look, s_Right));
 	g_View = XMMatrixLookAtLH(s_Eye, s_At, s_Up);
-	frustumBuffer = new FrustumBuffer();
+	
+	XMMATRIX InvView = XMMatrixInverse(&(XMMatrixDeterminant(g_View)),g_View);
+	XMStoreFloat4x4(&frustumBuffer->InvView, XMMatrixTranspose(InvView));
 	frustumBuffer->NearZ = 0.1f;
 	frustumBuffer->FarZ = 100.0f;
 	XMStoreFloat3(&frustumBuffer->Look, s_Look * frustumBuffer->FarZ);
@@ -182,13 +186,13 @@ void InitializeCubesLights()
 
 	lights = new LightBuffer[1024]();
 	lights[0].LightColor = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	lights[0].LightPos = XMFLOAT3(0.0f, 1.5f, 0.0f);
+	lights[0].LightPos = XMFLOAT3(0.0f, 0.0f, 1.5f);
 	lights[0].Ambient = XMFLOAT4(0.1f, 0.1f, 0.1f, 1.0f);
 	lights[0].Diffuse = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 	lights[0].Specular = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 	lights[0].Constant = 1.0f;
-	lights[0].Linear = 0.009f;
-	lights[0].Quadratic = 0.003f;
+	lights[0].Linear = 0.00009f;
+	lights[0].Quadratic = 0.000003f;
 
 	cubes = new SimpleVertex[1024*24]();
 	indices = new DWORD[1024 * 36]();
@@ -200,8 +204,8 @@ void InitializeCubesLights()
 			if (i != 0 && j != 0)
 			{
 				//lights[(i * 32 + j)].LightColor = lights[0].LightColor;
-				lights[(i * 32 + j)].LightPos = XMFLOAT3(lights[0].LightPos.x + (i - 16) * interval,lights[0].LightPos.y,lights[0].LightPos.z + (j - 16) * interval);
-				lights[(i * 32 + j)].LightPos = XMFLOAT3(lights[0].LightPos.x + i * interval, lights[0].LightPos.y, lights[0].LightPos.z + j * interval);
+				//lights[(i * 32 + j)].LightPos = XMFLOAT3(lights[0].LightPos.x + (i - 16) * interval,lights[0].LightPos.y + (j - 16) * interval,lights[0].LightPos.z);
+				lights[(i * 32 + j)].LightPos = XMFLOAT3(lights[0].LightPos.x + i * interval, lights[0].LightPos.y + j * interval, lights[0].LightPos.z);
 				lights[(i * 32 + j)].Ambient = lights[0].Ambient;
 				lights[(i * 32 + j)].Diffuse = lights[0].Diffuse;
 				lights[(i * 32 + j)].Specular = lights[0].Specular;
@@ -211,8 +215,8 @@ void InitializeCubesLights()
 			}
 			for (int k = 0; k < 24; ++k)
 			{
-				cubes[(i * 32 + j) * 24 + k].Pos = XMFLOAT3(cube[k].Pos.x + (i-16) * interval, cube[k].Pos.y, cube[k].Pos.z + (j - 16) * interval);
-				//cubes[(i * 32 + j) * 24 + k].Pos = XMFLOAT3(cube[k].Pos.x + (i-16) * interval, cube[k].Pos.y, cube[k].Pos.z + (j - 16) * interval);
+				cubes[(i * 32 + j) * 24 + k].Pos = XMFLOAT3(cube[k].Pos.x + (i-16) * interval, cube[k].Pos.y + (j - 16) * interval, cube[k].Pos.z);
+				//cubes[(i * 32 + j) * 24 + k].Pos = XMFLOAT3(cube[k].Pos.x + i * interval, cube[k].Pos.y + j * interval, cube[k].Pos.z);
 				cubes[(i * 32 + j) * 24 + k].Tex = cube[k].Tex;
 				cubes[(i * 32 + j) * 24 + k].Normal = cube[k].Normal;
 			}
@@ -479,9 +483,10 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
 	g_World = XMMatrixIdentity();
 	
 	// Initialize the view matrix
-	s_Eye = { 0.0f, 20.0f, 20.0f, 0.f };
+	s_Eye = { 0.0f, 0.0, 20.0f, 0.f };
 	s_At = { 0.0f, 0.0f, 0.0f, 0.f };
 	s_Up = { 0.0f, 1.0f, 0.0f, 0.f };
+	frustumBuffer = new FrustumBuffer();
 	UpdateView();
 	
 
@@ -750,7 +755,7 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
 	D3D11_BUFFER_DESC lightbd;
 	ZeroMemory(&lightbd, sizeof(lightbd));
 	lightbd.Usage = D3D11_USAGE_DYNAMIC;
-	lightbd.ByteWidth = sizeof(LightBuffer)*1024;
+	lightbd.ByteWidth = sizeof(LightBuffer);
 	lightbd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
 	lightbd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 	lightbd.MiscFlags = 0;
@@ -899,7 +904,7 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
 	pd3dImmediateContext->PSSetShader(g_pPixelShader, nullptr, 0);
 
 	pd3dImmediateContext->PSSetSamplers(0, 1, &g_pSamplerLinear);
-	pd3dImmediateContext->DrawIndexed(36*1024, 0, 0);
+ 	pd3dImmediateContext->DrawIndexed(36*1024, 0, 0);
 
 	SetBackBufferRenderTarget(pd3dImmediateContext);
 	ResetViewport(pd3dImmediateContext);
@@ -936,7 +941,7 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
 	pd3dImmediateContext->Unmap(g_pFrustumBuffer, 0);
 
 	pd3dImmediateContext->PSSetConstantBuffers(1, 1, &g_pFrustumBuffer);
-	pd3dImmediateContext->PSSetConstantBuffers(2, 1024, &g_pLightPixelBuffer);
+	pd3dImmediateContext->PSSetConstantBuffers(2, 1, &g_pLightPixelBuffer);
 
 	pd3dImmediateContext->PSSetShaderResources(0, 1, &g_shaderResourceViewArray[0]);//color
 	pd3dImmediateContext->PSSetShaderResources(1, 1, &g_shaderResourceViewArray[1]);//normal
@@ -946,6 +951,7 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
 	pd3dImmediateContext->PSSetShader(g_pLightPixelShader, nullptr, 0);
 	pd3dImmediateContext->PSSetSamplers(0, 1, &g_pSamplerLight);
 	pd3dImmediateContext->DrawIndexed(6, 0, 0);
+	//pd3dImmediateContext->DrawIndexed(6*1024, 0, 0);
 
 	TurnZBufferOn(pd3dImmediateContext);
 
@@ -1031,15 +1037,47 @@ void CALLBACK OnKeyboard( UINT nChar, bool bKeyDown, bool bAltDown, void* pUserC
                 break;
 			case 'W':
 			{
-				XMVECTOR s = XMVectorReplicate(0.1);
+				XMVECTOR s = XMVectorReplicate(0.5);
 
-				s_Eye=XMVectorMultiplyAdd(s, s_Up, s_Eye);
+				s_Eye=XMVectorMultiplyAdd(s, s_Look, s_Eye);
 
 				UpdateView();
 			}break;
 			case 'S':
 			{
-				XMVECTOR s = XMVectorReplicate(-0.1);
+				XMVECTOR s = XMVectorReplicate(-0.5);
+
+				s_Eye = XMVectorMultiplyAdd(s, s_Look, s_Eye);
+
+				UpdateView();
+			}break;
+			case 'A':
+			{
+				XMVECTOR s = XMVectorReplicate(-0.5);
+
+				s_Eye = XMVectorMultiplyAdd(s, s_Right, s_Eye);
+
+				UpdateView();
+			}break;
+			case 'D':
+			{
+				XMVECTOR s = XMVectorReplicate(0.5);
+
+				s_Eye = XMVectorMultiplyAdd(s, s_Right, s_Eye);
+
+				UpdateView();
+			}break;
+			case 'Q':
+			{
+				XMVECTOR s = XMVectorReplicate(0.5);
+
+				s_Eye = XMVectorMultiplyAdd(s, s_Up, s_Eye);
+
+				UpdateView();
+			}break;
+			case 'R':
+			{
+				XMVECTOR s = XMVectorReplicate(-0.5);
 
 				s_Eye = XMVectorMultiplyAdd(s, s_Up, s_Eye);
 

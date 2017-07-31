@@ -30,6 +30,7 @@ cbuffer FrustumBuffer : register(b1)
     float tanFov;
     float3 Look;
 
+    matrix InvView;
 };
 
 struct LightPos
@@ -52,7 +53,7 @@ struct LightPos
 
 cbuffer LightBuffer : register(b2)
 {
-    LightPos lights[1024];
+    LightPos lights;
 };
 
 
@@ -87,7 +88,6 @@ PS_INPUT VS(VS_INPUT input)
 //--------------------------------------------------------------------------------------
 float4 CaculateLights(float3 worldPos, float3 viewDir,float4 normals,LightPos light)
 {
-    float4 color;
     float3 lightDir;
     float3 halfDir;
     float diff;
@@ -118,7 +118,7 @@ float4 PS(PS_INPUT input) : SV_Target
     float4 outputColor;
     float3 worldPos;
     float3 viewDir;
-    float lightColors;
+    float4 lightColors;
 
     colors = txDiffuse.Sample(samLinear, input.Tex);
     normals = normalTexture.Sample(samLinear, input.Tex);
@@ -130,11 +130,15 @@ float4 PS(PS_INPUT input) : SV_Target
 
     //ratio = 1 / (FarZ - NearZ) * (1 - NearZ / normals.w);
     ratio = NearZ / (FarZ - (FarZ - NearZ) * normals.w);
-    viewDir = (input.Pos.x * Vx * Aspect + input.Pos.y * Vy) * ratio + Look * ratio;
+    float viewZ = ratio * FarZ;
+    //viewDir = (input.Pos.x * Vx * Aspect + input.Pos.y * Vy + Look) * ratio;
+    //viewDir = ((input.Pos.x * Vx * Aspect + input.Pos.y * Vy) * tanFov * FarZ + Look) * ratio;
+    //worldPos = viewDir + ViewPos;
+    viewDir = float3(input.Pos.x * Aspect * viewZ * tanFov, input.Pos.y * viewZ * tanFov, viewZ);
+    viewDir = mul(viewDir, (float3x3) InvView);
     worldPos = viewDir + ViewPos;
-    
-    for (int i = 0; i < 1024;i++)
-        lightColors += CaculateLights(worldPos,viewDir,normals, lights[i]);
+
+    lightColors = CaculateLights(worldPos,viewDir,normals, lights);
    
     colors *= lightColors;
 
